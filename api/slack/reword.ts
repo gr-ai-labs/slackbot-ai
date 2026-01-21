@@ -1,16 +1,15 @@
 import { generateText, createGateway } from "ai";
-import { waitUntil } from "@vercel/functions";
 import {
   verifySlackRequest,
   parseSlashCommandPayload,
   createSlackResponse,
   createErrorResponse,
-  type SlackSlashCommandPayload,
 } from "../../lib/slack.js";
 import { REWORD_SYSTEM_PROMPT, createRewordUserPrompt } from "../../lib/prompts.js";
 
 export const config = {
   runtime: "edge",
+  maxDuration: 30,
 };
 
 export default async function handler(req: Request) {
@@ -56,21 +55,6 @@ export default async function handler(req: Request) {
     );
   }
 
-  // Process asynchronously using Vercel's waitUntil
-  // This keeps the function alive after returning the response
-  waitUntil(processAndRespond(payload));
-
-  // Return immediate acknowledgment to Slack
-  return new Response(
-    JSON.stringify({
-      response_type: "ephemeral",
-      text: "Rewording your message...",
-    }),
-    { status: 200, headers: { "Content-Type": "application/json" } }
-  );
-}
-
-async function processAndRespond(payload: SlackSlashCommandPayload): Promise<void> {
   const originalMessage = payload.text.trim();
 
   try {
@@ -86,20 +70,17 @@ async function processAndRespond(payload: SlackSlashCommandPayload): Promise<voi
       prompt: createRewordUserPrompt(originalMessage),
     });
 
-    // Send the reworded message to Slack via response_url
-    await fetch(payload.response_url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(createSlackResponse(originalMessage, rewordedMessage)),
-    });
+    // Return the reworded message directly to Slack
+    return new Response(
+      JSON.stringify(createSlackResponse(originalMessage, rewordedMessage)),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error("Error calling Claude:", errorMessage, error);
-    // Send error message to Slack with details for debugging
-    await fetch(payload.response_url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(createErrorResponse(`Error: ${errorMessage}`)),
-    });
+    return new Response(
+      JSON.stringify(createErrorResponse(`Error: ${errorMessage}`)),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
   }
 }
