@@ -10,7 +10,8 @@ import {
 import { REWORD_SYSTEM_PROMPT, createRewordUserPrompt } from "../../lib/prompts.js";
 
 export const config = {
-  runtime: "edge",
+  runtime: "nodejs",
+  maxDuration: 30,
 };
 
 function log(stage: string, data?: Record<string, unknown>) {
