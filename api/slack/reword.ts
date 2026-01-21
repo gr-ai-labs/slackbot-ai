@@ -1,5 +1,4 @@
-import { generateText } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { generateText, gateway } from "ai";
 import {
   verifySlackRequest,
   parseSlashCommandPayload,
@@ -81,12 +80,11 @@ async function processAndRespond(payload: SlackSlashCommandPayload): Promise<voi
   const originalMessage = payload.text.trim();
 
   try {
-    // Call Claude via Vercel AI SDK
+    // Call Claude via Vercel AI Gateway
     const { text: rewordedMessage } = await generateText({
-      model: anthropic("claude-3-5-sonnet-20241022"),
+      model: gateway("anthropic/claude-3-5-sonnet-20241022"),
       system: REWORD_SYSTEM_PROMPT,
       prompt: createRewordUserPrompt(originalMessage),
-      maxTokens: 500,
     });
 
     // Send the reworded message to Slack via response_url
