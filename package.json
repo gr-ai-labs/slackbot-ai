@@ -7,16 +7,23 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/test.ts"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts"
   },
   "dependencies": {
+    "@vercel/functions": "^3.3.6",
     "ai": "^6.0.44"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
     "@vercel/node": "^5.5.25",
+    "@vitest/coverage-v8": "^4.0.17",
+    "dotenv-cli": "^11.0.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.17"
   },
   "engines": {
     "node": ">=18"

@@ -1,4 +1,5 @@
 import { generateText, gateway } from "ai";
+import { waitUntil } from "@vercel/functions";
 import {
   verifySlackRequest,
   parseSlashCommandPayload,
@@ -55,16 +56,9 @@ export default async function handler(req: Request) {
     );
   }
 
-  // Process asynchronously and respond via response_url
-  // Use waitUntil to keep the function alive after returning
-  const ctx = (globalThis as { waitUntil?: (promise: Promise<unknown>) => void });
-  if (ctx.waitUntil) {
-    ctx.waitUntil(processAndRespond(payload));
-  } else {
-    // Fallback: process inline (may timeout for slow responses)
-    await processAndRespond(payload);
-    return new Response(null, { status: 200 });
-  }
+  // Process asynchronously using Vercel's waitUntil
+  // This keeps the function alive after returning the response
+  waitUntil(processAndRespond(payload));
 
   // Return immediate acknowledgment to Slack
   return new Response(
