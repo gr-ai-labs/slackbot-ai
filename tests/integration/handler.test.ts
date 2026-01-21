@@ -7,7 +7,17 @@ vi.mock("ai", () => ({
   createGateway: vi.fn(() => (model: string) => ({ modelId: model })),
 }));
 
+// Mock @vercel/functions waitUntil
+vi.mock("@vercel/functions", () => ({
+  waitUntil: vi.fn((promise: Promise<unknown>) => promise),
+}));
+
+// Mock global fetch for response_url
+const mockFetch = vi.fn();
+vi.stubGlobal("fetch", mockFetch);
+
 import { generateText } from "ai";
+import { waitUntil } from "@vercel/functions";
 
 const TEST_SECRET = "test-signing-secret";
 
@@ -29,6 +39,7 @@ describe("API Handler", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    mockFetch.mockResolvedValue({ ok: true, text: () => Promise.resolve("ok") });
     process.env = { ...originalEnv, SLACK_SIGNING_SECRET: TEST_SECRET };
   });
 
@@ -80,7 +91,7 @@ describe("API Handler", () => {
     expect(data.text).toContain("Please provide a message");
   });
 
-  it("should return reworded message for valid request", async () => {
+  it("should return acknowledgment and call waitUntil for valid request", async () => {
     vi.resetModules();
     vi.mocked(generateText).mockResolvedValue({
       text: "Could you please help with this?",
@@ -111,10 +122,27 @@ describe("API Handler", () => {
       "x-slack-request-timestamp": timestamp,
     });
     const response = await handler(req);
+
+    // Should return immediate acknowledgment
     expect(response.status).toBe(200);
     const data = await response.json();
     expect(data.response_type).toBe("ephemeral");
-    expect(data.blocks).toBeDefined();
+    expect(data.text).toContain("Rewording");
+
+    // Should have called waitUntil for background processing
+    expect(waitUntil).toHaveBeenCalled();
+
+    // Wait for the promise inside waitUntil to complete
+    await vi.mocked(waitUntil).mock.calls[0][0];
+
+    // Should have posted to response_url
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://hooks.slack.com/test",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      })
+    );
   });
 
   it("should reject expired timestamps", async () => {

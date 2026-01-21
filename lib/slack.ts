@@ -141,3 +141,17 @@ export function createErrorResponse(message: string): SlackResponse {
     text: `:warning: ${message}`,
   };
 }
+
+export async function postToResponseUrl(
+  responseUrl: string,
+  response: SlackResponse
+): Promise<void> {
+  const res = await fetch(responseUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(response),
+  });
+  if (!res.ok) {
+    console.error("Failed to post to response_url:", res.status, await res.text());
+  }
+}

@@ -1,9 +1,11 @@
 import { generateText, createGateway } from "ai";
+import { waitUntil } from "@vercel/functions";
 import {
   verifySlackRequest,
   parseSlashCommandPayload,
   createSlackResponse,
   createErrorResponse,
+  postToResponseUrl,
 } from "../../lib/slack.js";
 import { REWORD_SYSTEM_PROMPT, createRewordUserPrompt } from "../../lib/prompts.js";
 
@@ -49,29 +51,37 @@ export default async function handler(req: Request) {
   }
 
   const originalMessage = payload.text.trim();
+  const responseUrl = payload.response_url;
 
-  try {
-    const gateway = createGateway({
-      apiKey: process.env.AI_GATEWAY_API_KEY,
-    });
+  // Process AI request in background and post result to response_url
+  waitUntil(
+    (async () => {
+      try {
+        const gateway = createGateway({
+          apiKey: process.env.AI_GATEWAY_API_KEY,
+        });
 
-    // Use faster Haiku model for quick responses within Slack's 3s timeout
-    const { text: rewordedMessage } = await generateText({
-      model: gateway("anthropic/claude-3-haiku-20240307"),
-      system: REWORD_SYSTEM_PROMPT,
-      prompt: createRewordUserPrompt(originalMessage),
-    });
+        const { text: rewordedMessage } = await generateText({
+          model: gateway("anthropic/claude-3-haiku-20240307"),
+          system: REWORD_SYSTEM_PROMPT,
+          prompt: createRewordUserPrompt(originalMessage),
+        });
 
-    return new Response(
-      JSON.stringify(createSlackResponse(originalMessage, rewordedMessage)),
-      { status: 200, headers: { "Content-Type": "application/json" } }
-    );
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error("Error calling Claude:", errorMessage, error);
-    return new Response(
-      JSON.stringify(createErrorResponse(`Error: ${errorMessage}`)),
-      { status: 200, headers: { "Content-Type": "application/json" } }
-    );
-  }
+        await postToResponseUrl(responseUrl, createSlackResponse(originalMessage, rewordedMessage));
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error("Error calling Claude:", errorMessage, error);
+        await postToResponseUrl(responseUrl, createErrorResponse(`Error: ${errorMessage}`));
+      }
+    })()
+  );
+
+  // Immediately return acknowledgment to Slack
+  return new Response(
+    JSON.stringify({
+      response_type: "ephemeral",
+      text: ":hourglass_flowing_sand: Rewording your message...",
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } }
+  );
 }
