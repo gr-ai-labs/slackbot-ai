@@ -7,7 +7,13 @@ vi.mock("ai", () => ({
   createGateway: vi.fn(() => (model: string) => ({ modelId: model })),
 }));
 
+// Mock @vercel/functions
+vi.mock("@vercel/functions", () => ({
+  waitUntil: vi.fn(),
+}));
+
 import { generateText } from "ai";
+import { waitUntil } from "@vercel/functions";
 
 // Helper to generate valid Slack signatures
 function generateSlackSignature(
@@ -178,9 +184,11 @@ describe("API Handler", () => {
 
     expect(response.status).toBe(200);
     const data = await response.json();
-    // Should return the reworded message directly
-    expect(data.blocks).toBeDefined();
+    // Should return acknowledgment
+    expect(data.text).toContain("Rewording");
     expect(data.response_type).toBe("ephemeral");
+    // Verify waitUntil was called for background processing
+    expect(waitUntil).toHaveBeenCalled();
 
     fetchSpy.mockRestore();
   });

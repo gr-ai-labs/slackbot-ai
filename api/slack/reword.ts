@@ -1,14 +1,16 @@
 import { generateText, createGateway } from "ai";
+import { waitUntil } from "@vercel/functions";
 import {
   verifySlackRequest,
   parseSlashCommandPayload,
   createSlackResponse,
   createErrorResponse,
+  type SlackSlashCommandPayload,
 } from "../../lib/slack.js";
 import { REWORD_SYSTEM_PROMPT, createRewordUserPrompt } from "../../lib/prompts.js";
 
 export const config = {
-  runtime: "edge",
+  runtime: "nodejs",
   maxDuration: 30,
 };
 
@@ -55,6 +57,20 @@ export default async function handler(req: Request) {
     );
   }
 
+  // Start async processing with waitUntil to keep function alive
+  waitUntil(processAndRespond(payload));
+
+  // Return immediate acknowledgment to Slack (within 3 seconds)
+  return new Response(
+    JSON.stringify({
+      response_type: "ephemeral",
+      text: ":hourglass: Rewording your message...",
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } }
+  );
+}
+
+async function processAndRespond(payload: SlackSlashCommandPayload): Promise<void> {
   const originalMessage = payload.text.trim();
 
   try {
@@ -70,17 +86,29 @@ export default async function handler(req: Request) {
       prompt: createRewordUserPrompt(originalMessage),
     });
 
-    // Return the reworded message directly to Slack
-    return new Response(
-      JSON.stringify(createSlackResponse(originalMessage, rewordedMessage)),
-      { status: 200, headers: { "Content-Type": "application/json" } }
-    );
+    // Send the reworded message to Slack via response_url
+    const response = await fetch(payload.response_url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(createSlackResponse(originalMessage, rewordedMessage)),
+    });
+
+    if (!response.ok) {
+      console.error("Failed to send to response_url:", response.status, await response.text());
+    }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error("Error calling Claude:", errorMessage, error);
-    return new Response(
-      JSON.stringify(createErrorResponse(`Error: ${errorMessage}`)),
-      { status: 200, headers: { "Content-Type": "application/json" } }
-    );
+
+    // Send error message to Slack
+    try {
+      await fetch(payload.response_url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(createErrorResponse(`Error: ${errorMessage}`)),
+      });
+    } catch (fetchError) {
+      console.error("Failed to send error to Slack:", fetchError);
+    }
   }
 }
