@@ -1,0 +1,23 @@
+{
+  "name": "slackbot-ai",
+  "version": "1.0.0",
+  "description": "Slack bot that rewords blunt messages into friendly, diplomatic communication using Claude",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^0.0.54",
+    "ai": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@vercel/node": "^5.5.25",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
