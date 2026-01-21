@@ -1,4 +1,4 @@
-import { generateText, gateway } from "ai";
+import { generateText, createGateway } from "ai";
 import { waitUntil } from "@vercel/functions";
 import {
   verifySlackRequest,
@@ -74,6 +74,11 @@ async function processAndRespond(payload: SlackSlashCommandPayload): Promise<voi
   const originalMessage = payload.text.trim();
 
   try {
+    // Create gateway with explicit API key
+    const gateway = createGateway({
+      apiKey: process.env.AI_GATEWAY_API_KEY,
+    });
+
     // Call Claude via Vercel AI Gateway
     const { text: rewordedMessage } = await generateText({
       model: gateway("anthropic/claude-3-5-sonnet-20241022"),

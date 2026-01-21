@@ -4,7 +4,7 @@ import { createHmac } from "crypto";
 // Mock the ai module before importing the handler
 vi.mock("ai", () => ({
   generateText: vi.fn(),
-  gateway: vi.fn((model: string) => ({ modelId: model })),
+  createGateway: vi.fn(() => (model: string) => ({ modelId: model })),
 }));
 
 // Mock @vercel/functions
