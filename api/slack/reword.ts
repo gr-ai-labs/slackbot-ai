@@ -83,7 +83,7 @@ async function processAndRespond(payload: SlackSlashCommandPayload): Promise<voi
   try {
     // Call Claude via Vercel AI SDK
     const { text: rewordedMessage } = await generateText({
-      model: anthropic("claude-sonnet-4-20250514"),
+      model: anthropic("claude-3-5-sonnet-20241022"),
       system: REWORD_SYSTEM_PROMPT,
       prompt: createRewordUserPrompt(originalMessage),
       maxTokens: 500,
@@ -96,12 +96,13 @@ async function processAndRespond(payload: SlackSlashCommandPayload): Promise<voi
       body: JSON.stringify(createSlackResponse(originalMessage, rewordedMessage)),
     });
   } catch (error) {
-    console.error("Error calling Claude:", error);
-    // Send error message to Slack
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("Error calling Claude:", errorMessage, error);
+    // Send error message to Slack with details for debugging
     await fetch(payload.response_url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(createErrorResponse("Sorry, I couldn't reword your message. Please try again.")),
+      body: JSON.stringify(createErrorResponse(`Error: ${errorMessage}`)),
     });
   }
 }
