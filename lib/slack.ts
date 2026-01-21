@@ -1,5 +1,3 @@
-import { createHmac, timingSafeEqual } from "crypto";
-
 export interface SlackSlashCommandPayload {
   token: string;
   team_id: string;
@@ -31,12 +29,12 @@ export function parseSlashCommandPayload(body: string): SlackSlashCommandPayload
   };
 }
 
-export function verifySlackRequest(
+export async function verifySlackRequest(
   signingSecret: string,
   signature: string | null,
   timestamp: string | null,
   body: string
-): boolean {
+): Promise<boolean> {
   if (!signature || !timestamp) {
     return false;
   }
@@ -48,20 +46,42 @@ export function verifySlackRequest(
     return false;
   }
 
-  // Compute expected signature
+  // Compute expected signature using Web Crypto API
   const sigBasestring = `v0:${timestamp}:${body}`;
-  const expectedSignature =
-    "v0=" + createHmac("sha256", signingSecret).update(sigBasestring).digest("hex");
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(signingSecret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signatureBuffer = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    encoder.encode(sigBasestring)
+  );
+  const expectedSignature = "v0=" + bufferToHex(signatureBuffer);
 
   // Use timing-safe comparison
-  try {
-    return timingSafeEqual(
-      Buffer.from(signature, "utf8"),
-      Buffer.from(expectedSignature, "utf8")
-    );
-  } catch {
+  return timingSafeEqual(signature, expectedSignature);
+}
+
+function bufferToHex(buffer: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) {
     return false;
   }
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
 }
 
 export interface SlackResponse {

@@ -1,4 +1,3 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import {
@@ -6,30 +5,44 @@ import {
   parseSlashCommandPayload,
   createSlackResponse,
   createErrorResponse,
+  type SlackSlashCommandPayload,
 } from "../../lib/slack.js";
 import { REWORD_SYSTEM_PROMPT, createRewordUserPrompt } from "../../lib/prompts.js";
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export const config = {
+  runtime: "edge",
+};
+
+export default async function handler(req: Request) {
   // Only accept POST requests
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
   if (!signingSecret) {
     console.error("SLACK_SIGNING_SECRET is not configured");
-    return res.status(500).json({ error: "Server configuration error" });
+    return new Response(JSON.stringify({ error: "Server configuration error" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   // Get raw body for signature verification
-  const rawBody = await getRawBody(req);
+  const rawBody = await req.text();
 
   // Verify the request is from Slack
-  const signature = req.headers["x-slack-signature"] as string | undefined;
-  const timestamp = req.headers["x-slack-request-timestamp"] as string | undefined;
+  const signature = req.headers.get("x-slack-signature");
+  const timestamp = req.headers.get("x-slack-request-timestamp");
 
-  if (!verifySlackRequest(signingSecret, signature ?? null, timestamp ?? null, rawBody)) {
-    return res.status(401).json({ error: "Invalid request signature" });
+  if (!(await verifySlackRequest(signingSecret, signature, timestamp, rawBody))) {
+    return new Response(JSON.stringify({ error: "Invalid request signature" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   // Parse the slash command payload
@@ -37,11 +50,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Validate the message
   if (!payload.text || payload.text.trim() === "") {
-    return res.status(200).json(
-      createErrorResponse("Please provide a message to reword. Usage: `/reword <your message>`")
+    return new Response(
+      JSON.stringify(createErrorResponse("Please provide a message to reword. Usage: `/reword <your message>`")),
+      { status: 200, headers: { "Content-Type": "application/json" } }
     );
   }
 
+  // Process asynchronously and respond via response_url
+  // Use waitUntil to keep the function alive after returning
+  const ctx = (globalThis as { waitUntil?: (promise: Promise<unknown>) => void });
+  if (ctx.waitUntil) {
+    ctx.waitUntil(processAndRespond(payload));
+  } else {
+    // Fallback: process inline (may timeout for slow responses)
+    await processAndRespond(payload);
+    return new Response(null, { status: 200 });
+  }
+
+  // Return immediate acknowledgment to Slack
+  return new Response(
+    JSON.stringify({
+      response_type: "ephemeral",
+      text: "Rewording your message...",
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } }
+  );
+}
+
+async function processAndRespond(payload: SlackSlashCommandPayload): Promise<void> {
   const originalMessage = payload.text.trim();
 
   try {
@@ -53,46 +89,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       maxTokens: 500,
     });
 
-    // Return the reworded message to Slack
-    return res.status(200).json(createSlackResponse(originalMessage, rewordedMessage));
+    // Send the reworded message to Slack via response_url
+    await fetch(payload.response_url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(createSlackResponse(originalMessage, rewordedMessage)),
+    });
   } catch (error) {
     console.error("Error calling Claude:", error);
-    return res.status(200).json(
-      createErrorResponse("Sorry, I couldn't reword your message. Please try again.")
-    );
-  }
-}
-
-async function getRawBody(req: VercelRequest): Promise<string> {
-  // If body is already parsed as a string, return it
-  if (typeof req.body === "string") {
-    return req.body;
-  }
-
-  // If body is a buffer, convert to string
-  if (Buffer.isBuffer(req.body)) {
-    return req.body.toString("utf8");
-  }
-
-  // If body is an object (already parsed), we need the raw body
-  // Vercel should provide this, but we may need to reconstruct it
-  if (req.body && typeof req.body === "object") {
-    // Try to get raw body from Vercel's internal property
-    const rawBody = (req as unknown as { rawBody?: string }).rawBody;
-    if (rawBody) {
-      return rawBody;
-    }
-    // Reconstruct from parsed body (for URL-encoded form data)
-    return new URLSearchParams(req.body as Record<string, string>).toString();
-  }
-
-  // Read from stream
-  return new Promise((resolve, reject) => {
-    let data = "";
-    req.on("data", (chunk: Buffer) => {
-      data += chunk.toString();
+    // Send error message to Slack
+    await fetch(payload.response_url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(createErrorResponse("Sorry, I couldn't reword your message. Please try again.")),
     });
-    req.on("end", () => resolve(data));
-    req.on("error", reject);
-  });
+  }
 }
