@@ -7,17 +7,11 @@ vi.mock("ai", () => ({
   createGateway: vi.fn(() => (model: string) => ({ modelId: model })),
 }));
 
-// Mock @vercel/functions
-vi.mock("@vercel/functions", () => ({
-  waitUntil: vi.fn((promise: Promise<unknown>) => promise),
-}));
-
 // Mock fetch for response_url
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
 import { generateText } from "ai";
-import { waitUntil } from "@vercel/functions";
 
 const TEST_SECRET = "test-signing-secret";
 
@@ -91,7 +85,7 @@ describe("API Handler", () => {
     expect(data.text).toContain("Please provide a message");
   });
 
-  it("should return acknowledgment and process in background", async () => {
+  it("should return acknowledgment and process with waitUntil context", async () => {
     vi.resetModules();
     vi.mocked(generateText).mockResolvedValue({
       text: "Could you please help with this?",
@@ -121,7 +115,14 @@ describe("API Handler", () => {
       "x-slack-signature": signature,
       "x-slack-request-timestamp": timestamp,
     });
-    const response = await handler(req);
+
+    // Create a mock context with waitUntil
+    const waitUntilPromises: Promise<unknown>[] = [];
+    const context = {
+      waitUntil: (p: Promise<unknown>) => { waitUntilPromises.push(p); }
+    };
+
+    const response = await handler(req, context);
 
     // Should return immediate acknowledgment
     expect(response.status).toBe(200);
@@ -129,11 +130,8 @@ describe("API Handler", () => {
     expect(data.response_type).toBe("ephemeral");
     expect(data.text).toContain("Rewording");
 
-    // Should have called waitUntil
-    expect(waitUntil).toHaveBeenCalled();
-
-    // Wait for background task
-    await vi.mocked(waitUntil).mock.calls[0][0];
+    // Wait for background tasks
+    await Promise.all(waitUntilPromises);
 
     // Should have posted to response_url
     expect(mockFetch).toHaveBeenCalledWith(

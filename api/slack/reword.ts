@@ -1,5 +1,4 @@
 import { generateText, createGateway } from "ai";
-import { waitUntil } from "@vercel/functions";
 import {
   verifySlackRequest,
   parseSlashCommandPayload,
@@ -9,47 +8,39 @@ import {
 import { REWORD_SYSTEM_PROMPT, createRewordUserPrompt } from "../../lib/prompts.js";
 
 export const config = {
-  runtime: "nodejs",
-  maxDuration: 60,
+  runtime: "edge",
 };
 
 function log(stage: string, data?: Record<string, unknown>) {
-  const timestamp = new Date().toISOString();
-  console.log(JSON.stringify({ timestamp, stage, ...data }));
+  console.log(JSON.stringify({ ts: new Date().toISOString(), stage, ...data }));
 }
 
 async function postToResponseUrl(responseUrl: string, body: object): Promise<void> {
-  log("posting_to_response_url", { responseUrl: responseUrl.slice(0, 50) });
-  const response = await fetch(responseUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  log("response_url_result", { status: response.status, ok: response.ok });
-  if (!response.ok) {
-    const text = await response.text();
-    log("response_url_error", { text });
+  log("posting", { url: responseUrl.slice(0, 50) });
+  try {
+    const res = await fetch(responseUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    log("posted", { status: res.status, ok: res.ok });
+  } catch (err) {
+    log("post_error", { error: String(err) });
   }
 }
 
-export default async function handler(req: Request) {
-  const requestId = crypto.randomUUID().slice(0, 8);
-  log("request_received", { requestId, method: req.method });
+export default async function handler(req: Request, context?: { waitUntil?: (p: Promise<unknown>) => void }) {
+  const id = crypto.randomUUID().slice(0, 8);
+  log("req", { id, method: req.method });
 
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json" },
-    });
+    return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
   if (!signingSecret) {
-    log("error_no_signing_secret", { requestId });
-    return new Response(JSON.stringify({ error: "Server configuration error" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    log("no_secret", { id });
+    return Response.json({ error: "Server configuration error" }, { status: 500 });
   }
 
   const rawBody = await req.text();
@@ -57,38 +48,30 @@ export default async function handler(req: Request) {
   const timestamp = req.headers.get("x-slack-request-timestamp");
 
   if (!(await verifySlackRequest(signingSecret, signature, timestamp, rawBody))) {
-    log("signature_invalid", { requestId });
-    return new Response(JSON.stringify({ error: "Invalid request signature" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+    log("bad_sig", { id });
+    return Response.json({ error: "Invalid request signature" }, { status: 401 });
   }
 
   const payload = parseSlashCommandPayload(rawBody);
-  const responseUrl = payload.response_url;
-  log("payload_parsed", { requestId, text: payload.text?.slice(0, 50), hasResponseUrl: !!responseUrl });
+  log("parsed", { id, text: payload.text?.slice(0, 30), hasUrl: !!payload.response_url });
 
   if (!payload.text || payload.text.trim() === "") {
-    return new Response(
-      JSON.stringify(createErrorResponse("Please provide a message to reword. Usage: `/reword <your message>`")),
-      { status: 200, headers: { "Content-Type": "application/json" } }
+    return Response.json(
+      createErrorResponse("Please provide a message to reword. Usage: `/reword <your message>`"),
+      { status: 200 }
     );
   }
 
   const originalMessage = payload.text.trim();
+  const responseUrl = payload.response_url;
 
-  // Start background processing
-  log("starting_background", { requestId });
-
-  const backgroundTask = (async () => {
-    log("background_started", { requestId });
+  // Background task
+  const task = (async () => {
+    log("bg_start", { id });
     try {
-      const gateway = createGateway({
-        apiKey: process.env.AI_GATEWAY_API_KEY,
-      });
-
-      log("calling_ai", { requestId });
-      const startTime = Date.now();
+      const gateway = createGateway({ apiKey: process.env.AI_GATEWAY_API_KEY });
+      log("ai_call", { id });
+      const t0 = Date.now();
 
       const { text: rewordedMessage } = await generateText({
         model: gateway("anthropic/claude-3-haiku-20240307"),
@@ -96,32 +79,28 @@ export default async function handler(req: Request) {
         prompt: createRewordUserPrompt(originalMessage),
       });
 
-      const duration = Date.now() - startTime;
-      log("ai_success", { requestId, duration });
-
+      log("ai_done", { id, ms: Date.now() - t0 });
       await postToResponseUrl(responseUrl, createSlackResponse(originalMessage, rewordedMessage));
-      log("background_complete", { requestId });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      log("background_error", { requestId, error: errorMessage });
-
-      try {
-        await postToResponseUrl(responseUrl, createErrorResponse(`Error: ${errorMessage}`));
-      } catch (postError) {
-        log("failed_to_post_error", { requestId, postError: String(postError) });
-      }
+      log("bg_done", { id });
+    } catch (err) {
+      log("bg_err", { id, error: String(err) });
+      await postToResponseUrl(responseUrl, createErrorResponse(`Error: ${err}`));
     }
   })();
 
-  waitUntil(backgroundTask);
-  log("returning_ack", { requestId });
+  // Use context.waitUntil if available (Vercel Edge), otherwise fire-and-forget
+  if (context?.waitUntil) {
+    log("using_waitUntil", { id });
+    context.waitUntil(task);
+  } else {
+    log("fire_and_forget", { id });
+    // Fire and forget - don't await
+    task.catch(err => log("task_error", { id, error: String(err) }));
+  }
 
-  // Return immediate acknowledgment
-  return new Response(
-    JSON.stringify({
-      response_type: "ephemeral",
-      text: ":hourglass_flowing_sand: Rewording your message...",
-    }),
-    { status: 200, headers: { "Content-Type": "application/json" } }
-  );
+  log("ack", { id });
+  return Response.json({
+    response_type: "ephemeral",
+    text: ":hourglass_flowing_sand: Rewording your message...",
+  });
 }
