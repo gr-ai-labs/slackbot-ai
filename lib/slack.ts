@@ -97,6 +97,10 @@ export interface SlackBlock {
     text: string;
     emoji?: boolean;
   };
+  elements?: Array<{
+    type: "plain_text" | "mrkdwn";
+    text: string;
+  }>;
   block_id?: string;
 }
 
@@ -126,10 +130,12 @@ export function createSlackResponse(
       },
       {
         type: "context",
-        text: {
-          type: "mrkdwn",
-          text: `_Original: ${originalMessage}_`,
-        },
+        elements: [
+          {
+            type: "mrkdwn",
+            text: `_Original: ${originalMessage}_`,
+          },
+        ],
       },
     ],
   };

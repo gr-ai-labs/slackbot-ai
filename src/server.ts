@@ -16,14 +16,15 @@ function log(stage: string, data?: Record<string, unknown>) {
 }
 
 async function postToResponseUrl(responseUrl: string, body: object): Promise<void> {
-  log("posting", { url: responseUrl.slice(0, 50) });
+  log("posting", { url: responseUrl.slice(0, 50), body: JSON.stringify(body).slice(0, 200) });
   try {
     const res = await fetch(responseUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    log("posted", { status: res.status, ok: res.ok });
+    const responseText = await res.text();
+    log("posted", { status: res.status, ok: res.ok, response: responseText.slice(0, 200) });
   } catch (err) {
     log("post_error", { error: String(err) });
   }
