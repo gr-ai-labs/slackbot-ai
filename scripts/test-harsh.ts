@@ -1,41 +1,7 @@
 import { generateText, createGateway } from "ai";
 import { REWORD_SYSTEM_PROMPT, createRewordUserPrompt } from "../lib/prompts.js";
 
-const TEST_MESSAGES = [
-  // Short/ambiguous messages
-  "need this asap",
-  "ok",
-  "thanks",
-  "fix this",
-  "why?",
-
-  // Demanding/urgent
-  "I need this done by EOD, no excuses",
-  "Drop everything and handle this now",
-  "This should have been done yesterday",
-
-  // Complaints/criticism
-  "This is wrong, fix it",
-  "Why isn't this done yet?",
-  "This code is terrible",
-  "You keep making the same mistakes",
-
-  // With @mentions
-  "@john fix the bug in production",
-  "@sarah I need the report NOW",
-  "Hey @mike why didn't you finish this?",
-
-  // Already polite (should stay similar)
-  "Could you please send me the file?",
-  "Thanks for your help with this!",
-
-  // Complex/longer messages
-  "The deployment failed again. I told you three times to test before pushing. This is unacceptable.",
-  "I don't understand why this is taking so long. We agreed on Friday delivery and it's now Tuesday.",
-  "Stop changing things without telling anyone. It breaks everything and wastes everyone's time.",
-
-  // === 20 LONGER CRITICAL/HARSH SENTENCES ===
-
+const HARSH_MESSAGES = [
   // Performance criticism
   "I've reviewed your work and honestly it's nowhere near the quality we expect. You need to step up or we'll have to reconsider your position on this project.",
   "This is the third time this month you've missed a deadline. I'm starting to question whether you're capable of handling this workload.",
@@ -71,22 +37,26 @@ const TEST_MESSAGES = [
   "I don't care whose fault it is, I care about fixing it. But since you asked, yes, this is absolutely your responsibility and you need to make it right.",
 ];
 
-async function runQualityTests() {
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function runHarshTests() {
   const gateway = createGateway({
     apiKey: process.env.AI_GATEWAY_API_KEY,
   });
 
   console.log("=".repeat(80));
-  console.log("REWORD BOT QUALITY TEST - 20 Example Prompts");
+  console.log("HARSH MESSAGE QUALITY TEST - 20 Critical/Harsh Sentences");
   console.log("Model: Claude Opus 4");
   console.log("=".repeat(80));
   console.log();
 
   const results: { original: string; reworded: string; time: number }[] = [];
 
-  for (let i = 0; i < TEST_MESSAGES.length; i++) {
-    const original = TEST_MESSAGES[i];
-    console.log(`[${i + 1}/${TEST_MESSAGES.length}] Testing: "${original.slice(0, 50)}${original.length > 50 ? '...' : ''}"`);
+  for (let i = 0; i < HARSH_MESSAGES.length; i++) {
+    const original = HARSH_MESSAGES[i];
+    console.log(`[${i + 1}/${HARSH_MESSAGES.length}] Testing...`);
 
     const startTime = Date.now();
     try {
@@ -100,39 +70,49 @@ async function runQualityTests() {
       results.push({ original, reworded, time });
       console.log(`    ✓ Done in ${time}ms`);
     } catch (error) {
-      console.log(`    ✗ Error: ${error}`);
-      results.push({ original, reworded: `ERROR: ${error}`, time: 0 });
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.log(`    ✗ Error: ${errorMsg.slice(0, 80)}`);
+      results.push({ original, reworded: `ERROR: ${errorMsg}`, time: 0 });
+
+      // If rate limited, wait longer
+      if (errorMsg.includes('RateLimit')) {
+        console.log(`    Waiting 10s before retry...`);
+        await sleep(10000);
+      }
     }
+
+    // Add delay between requests to avoid rate limiting
+    await sleep(2000);
   }
 
   // Print results
   console.log("\n");
   console.log("=".repeat(80));
-  console.log("RESULTS");
+  console.log("RESULTS - HARSH MESSAGES");
   console.log("=".repeat(80));
 
   for (let i = 0; i < results.length; i++) {
     const { original, reworded, time } = results[i];
-    console.log(`\n${i + 1}. ORIGINAL (${time}ms):`);
+    console.log(`\n${"─".repeat(80)}`);
+    console.log(`${i + 1}. ORIGINAL:`);
     console.log(`   "${original}"`);
-    console.log(`   REWORDED:`);
+    console.log(`\n   REWORDED (${time}ms):`);
     console.log(`   "${reworded}"`);
   }
 
   // Summary stats
-  const times = results.filter(r => r.time > 0).map(r => r.time);
-  const avgTime = times.reduce((a, b) => a + b, 0) / times.length;
-  const minTime = Math.min(...times);
-  const maxTime = Math.max(...times);
+  const successResults = results.filter(r => r.time > 0);
+  if (successResults.length > 0) {
+    const times = successResults.map(r => r.time);
+    const avgTime = times.reduce((a, b) => a + b, 0) / times.length;
 
-  console.log("\n");
-  console.log("=".repeat(80));
-  console.log("SUMMARY");
-  console.log("=".repeat(80));
-  console.log(`Total tests: ${TEST_MESSAGES.length}`);
-  console.log(`Avg response time: ${avgTime.toFixed(0)}ms`);
-  console.log(`Min/Max: ${minTime}ms / ${maxTime}ms`);
-  console.log("=".repeat(80));
+    console.log("\n");
+    console.log("=".repeat(80));
+    console.log("SUMMARY");
+    console.log("=".repeat(80));
+    console.log(`Successful: ${successResults.length}/${HARSH_MESSAGES.length}`);
+    console.log(`Avg response time: ${avgTime.toFixed(0)}ms`);
+  }
 }
 
-runQualityTests().catch(console.error);
+runHarshTests().catch(console.error);
