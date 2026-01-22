@@ -142,26 +142,11 @@ export function createDualVersionResponse(
     response_type: "ephemeral",
     blocks: [
       {
-        type: "header",
-        text: {
-          type: "plain_text",
-          text: "Your reworded messages",
-          emoji: true,
-        },
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "*💬 Casual:*",
-        },
-      },
-      {
         type: "section",
         block_id: "casual_block",
         text: {
           type: "mrkdwn",
-          text: `\`\`\`${versions.casual}\`\`\``,
+          text: `*💬 Casual:* ${versions.casual}`,
         },
         accessory: {
           type: "button",
@@ -176,17 +161,10 @@ export function createDualVersionResponse(
       },
       {
         type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "*👔 Formal:*",
-        },
-      },
-      {
-        type: "section",
         block_id: "formal_block",
         text: {
           type: "mrkdwn",
-          text: `\`\`\`${versions.formal}\`\`\``,
+          text: `*👔 Formal:* ${versions.formal}`,
         },
         accessory: {
           type: "button",
@@ -198,9 +176,6 @@ export function createDualVersionResponse(
           action_id: "copy_formal",
           value: versions.formal,
         },
-      },
-      {
-        type: "divider",
       },
       {
         type: "context",
