@@ -74,7 +74,7 @@ export default async function handler(req: Request, context?: { waitUntil?: (p: 
       const t0 = Date.now();
 
       const { text: rewordedMessage } = await generateText({
-        model: gateway("anthropic/claude-sonnet-4-20250514"),
+        model: gateway("anthropic/claude-opus-4-20250514"),
         system: REWORD_SYSTEM_PROMPT,
         prompt: createRewordUserPrompt(originalMessage),
       });
