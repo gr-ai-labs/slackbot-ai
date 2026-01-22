@@ -6,6 +6,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
+    "start": "node dist/src/server.js",
+    "dev": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -13,8 +15,10 @@
     "test:e2e": "vitest run --config vitest.e2e.config.ts"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.9",
     "@vercel/functions": "^3.3.6",
-    "ai": "^6.0.44"
+    "ai": "^6.0.44",
+    "hono": "^4.11.5"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
