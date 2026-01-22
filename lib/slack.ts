@@ -86,22 +86,15 @@ function timingSafeEqual(a: string, b: string): boolean {
 
 export interface SlackResponse {
   response_type?: "in_channel" | "ephemeral";
+  replace_original?: boolean;
+  delete_original?: boolean;
   text?: string;
-  blocks?: SlackBlock[];
+  blocks?: unknown[];
 }
 
-export interface SlackBlock {
-  type: string;
-  text?: {
-    type: "plain_text" | "mrkdwn";
-    text: string;
-    emoji?: boolean;
-  };
-  elements?: Array<{
-    type: "plain_text" | "mrkdwn";
-    text: string;
-  }>;
-  block_id?: string;
+export interface RewordedVersions {
+  casual: string;
+  formal: string;
 }
 
 export function createSlackResponse(
@@ -123,6 +116,87 @@ export function createSlackResponse(
         text: {
           type: "mrkdwn",
           text: rewordedMessage,
+        },
+      },
+      {
+        type: "divider",
+      },
+      {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: `_Original: ${originalMessage}_`,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+export function createDualVersionResponse(
+  originalMessage: string,
+  versions: RewordedVersions
+): SlackResponse {
+  return {
+    response_type: "ephemeral",
+    blocks: [
+      {
+        type: "header",
+        text: {
+          type: "plain_text",
+          text: "Your reworded messages",
+          emoji: true,
+        },
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "*💬 Casual:*",
+        },
+      },
+      {
+        type: "section",
+        block_id: "casual_block",
+        text: {
+          type: "mrkdwn",
+          text: `\`\`\`${versions.casual}\`\`\``,
+        },
+        accessory: {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "📋 Copy",
+            emoji: true,
+          },
+          action_id: "copy_casual",
+          value: versions.casual,
+        },
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "*👔 Formal:*",
+        },
+      },
+      {
+        type: "section",
+        block_id: "formal_block",
+        text: {
+          type: "mrkdwn",
+          text: `\`\`\`${versions.formal}\`\`\``,
+        },
+        accessory: {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "📋 Copy",
+            emoji: true,
+          },
+          action_id: "copy_formal",
+          value: versions.formal,
         },
       },
       {
